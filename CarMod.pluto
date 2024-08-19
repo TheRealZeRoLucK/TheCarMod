@@ -1,0 +1,1205 @@
+local nativeFetchStartTime = util.current_time_millis()
+util.require_natives("3095a", "g")
+local nativeFetchEndTime = util.current_time_millis() - nativeFetchStartTime
+util.log($"[Methadone.pluto] Found natives in {nativeFetchEndTime}ms")
+pluto_use "0.9.1"
+native_invoker.accept_bools_as_ints(true)
+
+local isDebugMode = false
+local joaat, toast, yield, draw_debug_text, reverse_joaat = util.joaat, util.toast, util.yield, util.draw_debug_text, util.reverse_joaat
+
+local supported_game_version <const> = "1.69-3274"
+if (game_version := menu.get_version().game) != supported_game_version then
+	util.toast($"This script was made for {supported_game_version}. The current game version is {game_version}.\nPlease note that some features or even the script may not work as intended.")
+end
+
+local sigscanStartTime = util.current_time_millis()
+local CWeaponDamageEventTrigger = memory.rip(memory.scan("E8 ? ? ? ? 44 8B 7D 80") + 1)
+local ppCNetworkObjectMgr__sm_Instance = memory.rip(memory.scan("48 8B 0D ? ? ? ? 45 33 C0 E8 ? ? ? ? 48 8B F8") + 3) -- credit to sapphire
+local allowDuckingAddr = memory.read_long(memory.read_long(memory.rip(memory.scan("01 48 8B 05 ? ? ? ? 48 8B 48 18") + 4)) + 0x18) -- this too lol
+local sigscanEndTime = util.current_time_millis() - sigscanStartTime
+util.log($"[Methadone.pluto] Scanned 3 signatures in {sigscanEndTime}ms")
+
+local invisibility = menu.ref_by_path("Self>Appearance>Invisibility")
+local levitation = menu.ref_by_path("Self>Movement>Levitation>Levitation")
+local vehInvisibility = menu.ref_by_path("Vehicle>Invisibility")
+local positonSpoofing = menu.ref_by_path("Online>Spoofing>Position Spoofing>Position Spoofing")
+local spoofedPos = menu.ref_by_path("Online>Spoofing>Position Spoofing>Spoofed Position")
+local superJump = menu.ref_by_path("Self>Movement>Super Jump")
+local gracefulLanding = menu.ref_by_path("Self>Movement>Graceful Landing")
+
+local GlobalplayerBD = 2657971
+local GlobalplayerBD_FM = 1845281
+local GlobalplayerBD_FM_3 = 1887305
+
+enum Labels begin
+	CMDOTH = -1974706693,
+	BLIPNFND = -1331937481,
+	DT_T = -766393174,
+	PLYNVEH = 1067523721,
+	STNDUSR = 1729001290,
+	TOOFAST = 1669138996
+end
+
+enum DRIVINGMODE begin
+	DF_StopForCars					= 1,
+	DF_StopForPeds					= 2,
+	DF_SwerveAroundAllCars			= 4,
+	DF_SteerAroundStationaryCars	= 8,
+	DF_SteerAroundPeds				= 16,
+	DF_SteerAroundObjects			= 32,
+	DF_DontSteerAroundPlayerPed		= 64,
+	DF_StopAtLights					= 128,
+	DF_GoOffRoadWhenAvoiding		= 256,
+	DF_DriveIntoOncomingTraffic		= 512,
+	DF_DriveInReverse				= 1024,
+	DF_UseWanderFallbackInsteadOfStraightLine = 2048,
+	DF_AvoidRestrictedAreas			= 4096,
+	DF_PreventBackgroundPathfinding		= 8192,
+	DF_AdjustCruiseSpeedBasedOnRoadSpeed = 16384,
+	DF_UseShortCutLinks				=  262144,
+	DF_ChangeLanesAroundObstructions = 524288,
+	DF_UseSwitchedOffNodes			=  2097152,
+	DF_PreferNavmeshRoute			=  4194304,
+	DF_PlaneTaxiMode				=  8388608,
+	DF_ForceStraightLine			= 16777216,
+	DF_UseStringPullingAtJunctions	= 33554432,
+	DF_AvoidHighways				= 536870912,
+	DF_ForceJoinInRoadDirection		= 1073741824
+end
+
+enum ENTER_EXIT_VEHICLE_FLAGS begin
+	ECF_RESUME_IF_INTERRUPTED = 1,
+	ECF_WARP_ENTRY_POINT = 2,
+	ECF_JACK_ANYONE = 8,
+	ECF_WARP_PED = 16,
+	ECF_DONT_WAIT_FOR_VEHICLE_TO_STOP = 64,
+	ECF_DONT_CLOSE_DOOR = 256,
+	ECF_WARP_IF_DOOR_IS_BLOCKED = 512,
+	ECF_JUMP_OUT = 4096,
+	ECF_DONT_DEFAULT_WARP_IF_DOOR_BLOCKED = 65536,
+	ECF_USE_LEFT_ENTRY = 131072,
+	ECF_USE_RIGHT_ENTRY = 262144,
+	ECF_JUST_PULL_PED_OUT = 524288,
+	ECF_BLOCK_SEAT_SHUFFLING = 1048576,
+	ECF_WARP_IF_SHUFFLE_LINK_IS_BLOCKED = 4194304,
+	ECF_DONT_JACK_ANYONE = 8388608,
+	ECF_WAIT_FOR_ENTRY_POINT_TO_BE_CLEAR = 16777216
+end
+
+enum eDamageFlags begin
+	DF_None								= 0,
+	DF_IsAccurate						= 1,
+	DF_MeleeDamage						= 2,
+	DF_SelfDamage						= 4,
+	DF_ForceMeleeDamage					= 8,
+	DF_IgnorePedFlags					= 16,
+	DF_ForceInstantKill					= 32,
+	DF_IgnoreArmor						= 64,
+	DF_IgnoreStatModifiers				= 128,
+	DF_FatalMeleeDamage					= 256,
+	DF_AllowHeadShot					= 512,
+	DF_AllowDriverKill					= 1024,
+	DF_KillPriorToClearedWantedLevel	= 2048,
+	DF_SuppressImpactAudio				= 4096,
+	DF_ExpectedPlayerKill				= 8192,
+	DF_DontReportCrimes					= 16384,
+	DF_PtFxOnly							= 32768,
+	DF_UsePlayerPendingDamage			= 65536,
+	DF_AllowCloneMeleeDamage			= 131072,
+	DF_NoAnimatedMeleeReaction			= 262144,
+	DF_IgnoreRemoteDistCheck			= 524288,
+	DF_VehicleMeleeHit					= 1048576,
+	DF_EnduranceDamageOnly				= 2097152,
+	DF_HealthDamageOnly					= 4194304,
+	DF_DamageFromBentBullet				= 8388608
+end
+
+
+enum VEHICLE_CLASS begin
+	VC_COMPACT = 0,
+	VC_SEDAN,
+	VC_SUV,
+	VC_COUPE,
+	VC_MUSCLE,
+	VC_SPORT_CLASSIC,
+	VC_SPORT,
+	VC_SUPER,
+	VC_MOTORCYCLE,
+	VC_OFF_ROAD,
+	VC_INDUSTRIAL,
+	VC_UTILITY,
+	VC_VAN,
+	VC_CYCLE,
+	VC_BOAT,
+	VC_HELICOPTER,
+	VC_PLANE,
+	VC_SERVICE,
+	VC_EMERGENCY,
+	VC_MILITARY,
+	VC_COMMERCIAL,
+	VC_RAIL,
+	VC_OPEN_WHEEL
+end
+
+enum TransitionState begin
+	TRANSITION_STATE_EMPTY = 0,
+	TRANSITION_STATE_SP_SWOOP_UP = 1,
+	TRANSITION_STATE_MP_SWOOP_UP = 2,
+	TRANSITION_STATE_CREATOR_SWOOP_UP = 3,
+	TRANSITION_STATE_PRE_HUD_CHECKS = 4,
+	TRANSITION_STATE_WAIT_HUD_EXIT = 5,
+	TRANSITION_STATE_WAIT_FOR_SUMMON = 6,
+	TRANSITION_STATE_SP_SWOOP_DOWN = 7,
+	TRANSITION_STATE_MP_SWOOP_DOWN = 8,
+	TRANSITION_STATE_CANCEL_JOINING = 9,
+	TRANSITION_STATE_RETRY_LOADING = 10,
+	TRANSITION_STATE_RETRY_LOADING_SLOT_1 = 11,
+	TRANSITION_STATE_RETRY_LOADING_SLOT_2 = 12,
+	TRANSITION_STATE_RETRY_LOADING_SLOT_3 = 13,
+	TRANSITION_STATE_RETRY_LOADING_SLOT_4 = 14,
+	TRANSITION_STATE_WAIT_ON_INVITE = 15,
+	TRANSITION_STATE_PREJOINING_FM_SESSION_CHECKS = 16,
+	TRANSITION_STATE_LOOK_FOR_FRESH_JOIN_FM = 17,
+	TRANSITION_STATE_LOOK_TO_JOIN_ANOTHER_SESSION_FM = 18,
+	TRANSITION_STATE_CONFIRM_FM_SESSION_JOINING = 19,
+	TRANSITION_STATE_WAIT_JOIN_FM_SESSION = 20,
+	TRANSITION_STATE_CREATION_ENTER_SESSION = 21,
+	TRANSITION_STATE_PRE_FM_LAUNCH_SCRIPT = 22,
+	TRANSITION_STATE_FM_TEAMFULL_CHECK = 23,
+	TRANSITION_STATE_START_FM_LAUNCH_SCRIPT = 24,
+	TRANSITION_STATE_FM_TRANSITION_CREATE_PLAYER = 25,
+	TRANSITION_STATE_IS_FM_AND_TRANSITION_READY = 26,
+	TRANSITION_STATE_FM_SWOOP_DOWN = 27,
+	TRANSITION_STATE_POST_BINK_VIDEO_WARP = 28,
+	TRANSITION_STATE_FM_FINAL_SETUP_PLAYER = 29,
+	TRANSITION_STATE_MOVE_FM_TO_RUNNING_STATE = 30,
+	TRANSITION_STATE_FM_HOW_TO_TERMINATE = 31,
+	TRANSITION_STATE_START_CREATOR_PRE_LAUNCH_SCRIPT_CHECK = 32,
+	TRANSITION_STATE_START_CREATOR_LAUNCH_SCRIPT = 33,
+	TRANSITION_STATE_CREATOR_TRANSITION_CREATE_PLAYER = 34,
+	TRANSITION_STATE_IS_CREATOR_AND_TRANSITION_READY = 35,
+	TRANSITION_STATE_CREATOR_SWOOP_DOWN = 36,
+	TRANSITION_STATE_CREATOR_FINAL_SETUP_PLAYER = 37,
+	TRANSITION_STATE_MOVE_CREATOR_TO_RUNNING_STATE = 38,
+	TRANSITION_STATE_PREJOINING_TESTBED_SESSION_CHECKS = 39,
+	TRANSITION_STATE_LOOK_FOR_FRESH_JOIN_TESTBED = 40,
+	TRANSITION_STATE_LOOK_FOR_FRESH_HOST_TESTBED = 41,
+	TRANSITION_STATE_LOOK_TO_JOIN_ANOTHER_SESSION_TESTBED = 42,
+	TRANSITION_STATE_LOOK_TO_HOST_SESSION_TESTBED = 43,
+	TRANSITION_STATE_CONFIRM_TESTBED_SESSION_JOINING = 44,
+	TRANSITION_STATE_WAIT_JOIN_TESTBED_SESSION = 45,
+	TRANSITION_STATE_START_TESTBED_LAUNCH_SCRIPT = 46,
+	TRANSITION_STATE_TESTBED_TRANSITION_CREATE_PLAYER = 47,
+	TRANSITION_STATE_IS_TESTBED_AND_TRANSITION_READY = 48,
+	TRANSITION_STATE_TESTBED_SWOOP_DOWN = 49,
+	TRANSITION_STATE_TESTBED_FINAL_SETUP_PLAYER = 50,
+	TRANSITION_STATE_MOVE_TESTBED_TO_RUNNING_STATE = 51,
+	TRANSITION_STATE_TESTBED_HOW_TO_TERMINATE = 52,
+	TRANSITION_STATE_QUIT_CURRENT_SESSION_PROMPT = 53,
+	TRANSITION_STATE_WAIT_FOR_TRANSITION_SESSION_TO_SETUP = 54,
+	TRANSITION_STATE_TERMINATE_SP = 55,
+	TRANSITION_STATE_WAIT_TERMINATE_SP = 56,
+	TRANSITION_STATE_KICK_TERMINATE_SESSION = 57,
+	TRANSITION_STATE_TERMINATE_SESSION = 58,
+	TRANSITION_STATE_WAIT_TERMINATE_SESSION = 59,
+	TRANSITION_STATE_TERMINATE_SESSION_AND_HOLD = 60,
+	TRANSITION_STATE_TERMINATE_SESSION_AND_MOVE_INTO_HOLDING_STATE = 61,
+	TRANSITION_STATE_TEAM_SWAPPING_CHECKS = 62,
+	TRANSITION_STATE_RETURN_TO_SINGLEPLAYER = 63,
+	TRANSITION_STATE_WAIT_FOR_SINGLEPLAYER_TO_START = 64,
+	TRANSITION_STATE_WAITING_FOR_EXTERNAL_TERMINATION_CALL = 65,
+	TRANSITION_STATE_TERMINATE_MAINTRANSITION = 66,
+	TRANSITION_STATE_WAIT_FOR_DIRTY_LOAD_CONFIRM = 67,
+	TRANSITION_STATE_DLC_INTRO_BINK = 68,
+	TRANSITION_STATE_SPAWN_INTO_PERSONAL_VEHICLE = 69
+end
+
+enum DUCK_TOGGLE begin
+    TOGGLE_DUCK_AUTO = -1,
+    TOGGLE_DUCK_OFF,
+    TOGGLE_DUCK_ON
+end
+
+function isNetPlayerOk(playerID, assert_playing = false, assert_done_transition = true) -- credit to sapphire *sighs* yet again
+	if not NETWORK_IS_PLAYER_ACTIVE(playerID) then return false end
+	if assert_playing and not IS_PLAYER_PLAYING(playerID) then return false end
+	if assert_done_transition then
+		if playerID == memory.read_int(memory.script_global(2672855 + 3)) then -- Global_2672855.f_3
+			return memory.read_int(memory.script_global(2672855 + 2)) != 0 -- -- Global_2672855.f_2
+		elseif memory.read_int(memory.script_global(GlobalplayerBD + 1 + (playerID * 465))) != 4 then -- Global_2657971[iVar0 /*465*/] != 4
+			return false
+		end
+	end
+	return true
+end
+
+local function callVirtualFunction(pObject: int, iPosition: int, ...args) -- credit to sapphire for these 3 functions too 
+	for i, arg in args do
+		if type(arg) == "boolean" then
+			args[i] = arg ? 1 : 0
+		end
+	end
+	return util.call_foreign_function(memory.read_long(memory.read_long(pObject) + 8 * iPosition), pObject, table.unpack(args))
+end
+
+local function unregisterNetworkedEntity(pEntity: int): void
+	callVirtualFunction(memory.read_long(ppCNetworkObjectMgr__sm_Instance), 6, memory.read_long(pEntity + 0xD0), 15)
+end
+
+local m = memory.alloc_int()
+function deleteEntityLocally(entity: int): void 
+	local pEntity = entities.handle_to_pointer(entity)
+	if pEntity == 0 then
+		return
+	end
+	unregisterNetworkedEntity(pEntity)
+	m:writeInt(entity)
+	DELETE_ENTITY(m)
+end
+
+function bitTest(bits, place)
+	return (bits & (1 << place)) != 0
+end
+
+function setBit(addr: number, bit: number)
+	memory.write_int(addr, memory.read_int(addr) | 1 << bit)
+end
+
+function clearBit(addr: number, bit: number)
+	memory.write_int(addr, memory.read_int(addr) ~ 1 << bit)
+end
+
+function isPlayerSpectating(playerID)
+	return bitTest(memory.read_int(memory.script_global(GlobalplayerBD + 1 + (playerID * 465) + 200)), 2) -- BitTest(Global_2657971[bParam0 /*465*/].f_200, 2)
+end
+
+function getPlayerJobPoints(playerID)
+	return memory.read_int(memory.script_global(GlobalplayerBD_FM + 1 + (playerID * 883) + 9))  -- Global_1845281[PLAYER::PLAYER_ID() /*883*/].f_9
+end
+
+function isPlayerUsingOrbitalCannon(playerID)
+	return bitTest(memory.read_int(memory.script_global(GlobalplayerBD + 1 + (playerID * 465) + 426)), 0) -- Global_2657971[PLAYER::PLAYER_ID() /*465*/].f_426
+end
+
+function isPlayerRidingRollerCoaster(playerID)
+	return bitTest(memory.read_int(memory.script_global(GlobalplayerBD_FM + 1 + (playerID * 883) + 879)), 15) -- Global_1845281[PLAYER::PLAYER_ID() /*883*/].f_879
+end
+
+function isPlayerSolicitingProstitute(playerID)
+	return memory.read_int(memory.script_global(GlobalplayerBD + 1 + (playerID * 465) + 430)) != 0 -- Global_2657921[PLAYER::PLAYER_ID() /*465*/].f_430
+end
+
+function isPlayerUsingBallisticEquipment(playerID)
+	return memory.script_global(GlobalplayerBD_FM_3 + 1 + (playerID * 610) + 587) -- Global_1887305[PLAYER::PLAYER_ID() /*610*/].f_587
+end
+
+function getPlayerCurrentInterior(playerID)
+	if not isNetPlayerOk(playerID) then return end -- to prevent random access violations
+	return memory.read_int(memory.script_global(GlobalplayerBD + 1 + (playerID * 465) + 246)) -- Global_2657971[bVar0 /*465*/].f_246)
+end
+
+function getPlayerCurrentShop(playerID)
+	if not isNetPlayerOk(playerID) then return end
+	return memory.read_int(memory.script_global(GlobalplayerBD + 1 + (playerID * 465) + 247)) -- Global_2657921[bVar0 /*465*/].f_247
+end
+
+function getPlayerProperty(playerID)
+	return memory.script_global(GlobalplayerBD_FM + 1 + (playerID * 883) + 268 + 35)  -- Global_1845281[PLAYER::PLAYER_ID() /*883*/].f_268.f_35)
+end
+
+function blipInteriorID(playerID)
+	return memory.script_global(GlobalplayerBD + 1 + (playerID * 465) + 74 + 6) -- Global_2657971[bParam0 /*465*/].f_74.f_6
+end
+
+function blipInteriorPos(playerID)
+	return memory.script_global(GlobalplayerBD + 1 + (playerID * 465) + 74 + 7) -- Global_2657971[bParam0 /*465*/].f_74.f_7
+end
+
+function isFreemodeActive(playerID)
+	return NETWORK_IS_PLAYER_A_PARTICIPANT_ON_SCRIPT(playerID, "freemode", -1)
+end
+
+function getTransitionState()
+	return memory.read_int(memory.script_global(1575011))  
+end
+
+function manhattanDistance(v1, v2)
+    return math.abs(v1.x - v2.x) + math.abs(v1.y - v2.y) + math.abs(v1.z - v2.z)
+end
+
+local getTransitionStateName
+do
+	local names <const> = TransitionState:vkmap()
+	function getTransitionStateName(transitionState) -- credit to sapphire for this function
+		return names[transitionState]:sub(18)
+	end
+end
+
+function isPlayerInPassiveMode(playerID)
+	return memory.read_int(memory.script_global(GlobalplayerBD_FM_3 + 1 + (playerID * 610) + 8)) == 1 -- Global_1887305[PLAYER::PLAYER_ID() /*610*/].f_8
+end
+
+function isPlayerInInterior(playerID)
+	if not isNetPlayerOk(playerID) then return end
+    return GET_INTERIOR_GROUP_ID(getPlayerCurrentInterior(playerID)) == 0 and getPlayerCurrentInterior(playerID) != 0 or players.is_in_interior(playerID)
+end
+
+function isPlayerInCutscene(playerID)
+	return NETWORK_IS_PLAYER_IN_MP_CUTSCENE(playerID) or IS_PLAYER_IN_CUTSCENE(playerID)
+end
+
+
+
+function getSeatPedIsIn(ped)
+	local vehicle = GET_VEHICLE_PED_IS_USING(ped)
+	if vehicle == 0 then
+		return nil
+	end
+	local num_of_seats = GET_VEHICLE_MODEL_NUMBER_OF_SEATS(GET_ENTITY_MODEL(vehicle))
+	for i = -1, num_of_seats - 1 do
+		local ped_in_seat = GET_PED_IN_VEHICLE_SEAT(vehicle, i)
+		if ped_in_seat == ped then
+			return i
+		end
+	end
+end
+
+function isPlayerInAnyVehicle(playerID)
+	local ped = GET_PLAYER_PED_SCRIPT_INDEX(playerID)
+	return IS_PED_IN_ANY_VEHICLE(ped) and not IS_REMOTE_PLAYER_IN_NON_CLONED_VEHICLE(playerID)
+end
+
+function isDetectionPresent(playerID, detection)
+	if players.exists(playerID) and menu.player_root(playerID):isValid() then
+		for menu.player_root(playerID):getChildren() as cmd do
+			if cmd:getType() == COMMAND_LIST_CUSTOM_SPECIAL_MEANING and cmd:refByRelPath(detection):isValid() and players.exists(playerID) then
+				return true
+			end
+		end
+	end
+	return false
+end
+
+function loadPtfxAsset(assetName)
+	while not HAS_NAMED_PTFX_ASSET_LOADED(assetName) do
+		REQUEST_NAMED_PTFX_ASSET(assetName)
+		yield()
+	end
+end
+
+function requestAnimDict(animDict)
+	while not HAS_ANIM_DICT_LOADED(animDict) do
+		REQUEST_ANIM_DICT(animDict)
+		yield()
+	end
+end
+
+function requestClipset(clipset)
+	while not HAS_CLIP_SET_LOADED(clipset) do
+		REQUEST_CLIP_SET(clipset)
+		yield()
+	end
+end
+
+function getTeamID(playerID)
+	if not isNetPlayerOk(playerID) then return end
+	local ped = GET_PLAYER_PED_SCRIPT_INDEX(playerID)
+	local pPed = entities.handle_to_pointer(ped)
+	local net_obj = memory.read_long(pPed + 0xD0)
+	if net_obj == 0 then return end
+	local teamID = memory.read_byte(net_obj + 0x469)
+	if net_obj != 0 and teamID != 6 then
+		return teamID
+	end
+end
+
+function getInstanceID(playerID)
+	if not isNetPlayerOk(playerID) then return end 
+	local ped = GET_PLAYER_PED_SCRIPT_INDEX(playerID)
+	local pPed = entities.handle_to_pointer(ped)
+	local net_obj = memory.read_long(pPed + 0xD0)
+	if net_obj == 0 then return end
+	local instanceID = memory.read_byte(net_obj + 0x46A)
+	if net_obj != 0 and instanceID != 64 then
+		return instanceID
+	end
+end
+
+local randomPeds = {
+	joaat("a_f_y_topless_01"),
+	joaat("s_m_m_movalien_01"),
+	joaat("s_m_y_mime"), 
+	joaat("u_m_y_militarybum"),
+	joaat("a_m_y_indian_01"),
+	joaat("s_m_y_clown_01"),
+	joaat("u_m_y_burgerdrug_01"),
+	joaat("u_m_m_yulemonster")
+}
+
+function createRandomPed(pos)
+	local mdlHash = randomPeds[math.random(#randomPeds)]
+	util.request_model(mdlHash)
+	return entities.create_ped(26, mdlHash, pos, 0)
+end
+
+
+
+function triggerDistanceBasedTeleport(playerID, scriptEvent)
+	local joinOrg = menu.ref_by_rel_path(menu.player_root(playerID), "Join CEO/MC")
+	local timer = util.current_time_millis() + 1000
+	joinOrg.value = true
+	repeat
+		if util.current_time_millis() > timer then
+			joinOrg.value = false
+			return
+		end
+		yield()
+	until players.get_boss(players.user()) != -1
+	timer = util.current_time_millis() + 1000
+	local ped = GET_PLAYER_PED_SCRIPT_INDEX(playerID)
+	local pos = players.get_position(players.user())
+	local pPos = players.get_position(playerID)
+	pPos.z -= 10
+	invisibility:setState("Locally Visible")
+	SET_ENTITY_COORDS_NO_OFFSET(players.user_ped(), pPos, false, false, false)
+	repeat
+		if util.current_time_millis() > timer then
+			joinOrg.value = false
+			invisibility:setState("Disabled")
+			SET_ENTITY_COORDS_NO_OFFSET(players.user_ped(), pos, false, false, false)
+			return
+		end
+		yield()
+	until DOES_ENTITY_EXIST(ped)
+	yield(500)
+	util.trigger_script_event( 1 << playerID, scriptEvent)
+	SET_ENTITY_COORDS_NO_OFFSET(players.user_ped(), pos, false, false, false)
+	invisibility:setState("Disabled")
+	joinOrg.value = false
+end
+
+function doesVehicleHaveImaniTech(vehicle_model)
+	switch vehicle_model do
+	case joaat("deity"):
+	case joaat("granger2"):
+	case joaat("buffalo4"):
+	case joaat("jubilee"):
+	case joaat("patriot3"):
+	case joaat("champion"):
+	case joaat("greenwood"):
+	case joaat("omnisegt"):
+	case joaat("virtue"):
+	case joaat("r300"):
+	case joaat("stingertt"):
+	case joaat("buffalo5"):
+	case joaat("coureur"):
+	case joaat("monstrociti"):
+	case joaat("ruiner2"):
+		return true
+	end
+	return false
+end
+
+local weapon_stuff = {
+	{"Firework", "weapon_firework"}, 
+	{"Up N Atomizer", "weapon_raypistol"},
+	{"Unholy Hellbringer", "weapon_raycarbine"},
+	{"Rail Gun", "weapon_railgun"},
+	{"Red Laser", "vehicle_weapon_enemy_laser"},
+	{"Green Laser", "vehicle_weapon_player_laser"},
+	{"P-996 Lazer", "vehicle_weapon_player_lazer"},
+	{"RPG", "weapon_rpg"},
+	{"Homing Launcher", "weapon_hominglauncher"},
+	{"EMP Launcher", "weapon_emplauncher"},
+	{"Flare Gun", "weapon_flaregun"},
+	{"Shotgun", "weapon_bullpupshotgun"},
+	{"Stungun", "weapon_stungun"},
+	{"Smoke Gun", "weapon_smokegrenade"},
+}
+
+local proofs = {
+	bullet = {name="Bullets",on=false},
+	fire = {name="Fire",on=false},
+	explosion = {name="Explosions",on=false},
+	collision = {name="Collision",on=false},
+	melee = {name="Melee",on=false},
+	steam = {name="Steam",on=false},
+	water = {name="Water",on=false},
+}
+
+local doors = {
+	"v_ilev_ml_door1",
+	"v_ilev_ta_door",
+	"v_ilev_247door",
+	"v_ilev_247door_r",
+	"v_ilev_lostdoor",
+	"v_ilev_bs_door",
+	"v_ilev_cs_door01",
+	"v_ilev_cs_door01_r",
+	"v_ilev_gc_door03",
+	"v_ilev_gc_door04",
+	"v_ilev_clothmiddoor",
+	"v_ilev_clothmiddoor",
+	"prop_shop_front_door_l",
+	"prop_shop_front_door_r",
+	"prop_com_ls_door_01",
+	"v_ilev_Methadone3door",
+}
+
+local object_stuff = {
+	{util.joaat("prop_ld_ferris_wheel"), "Ferris Wheel"},
+	{util.joaat("p_spinning_anus_s"), "UFO"},
+	{util.joaat("prop_windmill_01"), "Windmill"},
+	{util.joaat("prop_staticmixer_01"), "Cement Mixer"},
+	{util.joaat("prop_towercrane_02a"), "Tower Crane"},
+	{util.joaat("des_scaffolding_root"), "Scaffolding"},
+	{util.joaat("stt_prop_stunt_bowling_ball"), "Big Bowling Ball"},
+	{util.joaat("stt_prop_stunt_soccer_ball"), "Big Soccer Ball"},
+	{util.joaat("prop_juicestand"), "Big Orange Ball"},
+	{util.joaat("stt_prop_stunt_jump_l"), "Stunt Ramp"},
+}
+
+local deezBalls = {
+	{util.joaat("stt_prop_stunt_soccer_sball"), "Small Soccer Ball"},
+	{util.joaat("stt_prop_stunt_soccer_ball"), " Medium Soccer Ball"},
+	{util.joaat("stt_prop_stunt_soccer_lball"), "Large Soccer Ball"},
+	{util.joaat("v_res_mexball"), "Yoga Ball"},
+	{util.joaat("stt_prop_stunt_bowling_ball"), "Bowling Ball"},
+	{util.joaat("imp_prop_bomb_ball"), "Bomb Ball"},
+	{util.joaat("prop_bskball_01"), "Basketball"},
+}
+
+local vehicle_classes = {
+	"Compacts",
+	"Sedans",
+	"SUVs",
+	"Coupes",
+	"Muscle",
+	"Sports Classics",
+	"Sports",
+	"Super",
+	"Motorcycles",
+	"Off-road",
+	"Industrial",
+	"Utility",
+	"Vans",
+	"Cycles",
+	"Boats",
+	"Helicopters",
+	"Planes",
+	"Service",
+	"Emergency",
+	"Military",
+	"Commercial",
+	"Trains",
+	"Openwheel"
+}
+
+local locations = {
+	{"Safe Space [AFK Room]", {x=-158.71494, y=-982.75885, z=149.13135}},
+	{"Torture Room", {x=147.170, y=-2201.804, z=4.688}},
+	{"Mining Tunnels", {x=-595.48505, y=2086.4502, z=131.38136}},
+	{"Omegas Garage", {x=2330.2573, y=2572.3005, z=46.679367}},
+	{"Eclipse Blvd Garage", {x=520.0, y=-2625.0, z=-50.0}},
+	{"Server Farm", {x=2474.0847, y=-332.58887, z=92.9927}},
+	{"Character Creation", {x=402.91586, y=-998.5701, z=-99.004074}},
+	{"Life Invader Building", {x=-1082.8595, y=-254.774, z=37.763317}},
+	{"Mission End Garage", {x=405.9228, y=-954.1149, z=-99.6627}},
+	{"Destroyed Hospital", {x=304.03894, y=-590.3037, z=43.291893}},
+	{"Stadium", {x=-256.92334, y=-2024.9717, z=30.145584}},
+	{"Comedy Club", {x=-430.00974, y=261.3437, z=83.00648}},
+	{"Record A Studios", {x=-1010.6883, y=-49.127754, z=-99.40313}},
+	{"Bahama Mamas Nightclub", {x=-1394.8816, y=-599.7526, z=30.319544}},
+	{"Janitors House", {x=-110.20285, y=-8.6156025, z=70.51957}},
+	{"Therapists House", {x=-1913.8342, y=-574.5799, z=11.435149}},
+	{"Martin Madrazos House", {x=1395.2512, y=1141.6833, z=114.63437}},
+	{"Floyds Apartment", {x=-1156.5099, y=-1519.0894, z=10.632717}},
+	{"Michaels House", {x=-813.8814, y=179.07889, z=72.15914}},
+	{"Franklins House (Strawberry)", {x=-14.239959, y=-1439.6913, z=31.101551}},
+	{"Franklins House (Vinewood Hills)", {x=7.3125067, y=537.3615, z=176.02803}},
+	{"Trevors House", {x=1974.1617, y=3819.032, z=33.436287}},
+	{"Lesters House", {x=1273.898, y=-1719.304, z=54.771}},
+	{"Lesters Warehouse", {x=713.5684, y=-963.64795, z=30.39534}},
+	{"Lesters Office", {x=707.2138, y=-965.5549, z=30.412853}},
+	{"Meth Lab", {x=1391.773, y=3608.716, z=38.942}},
+	{"Acid Lab", {x=484.69, y=-2625.36, z=-49.0}},
+	{"Morgue Lab", {x=495.0, y=-2560.0, z=-50.0}},
+	{"Humane Labs", {x=3625.743, y=3743.653, z=28.69009}},
+	{"Motel Room", {x=152.2605, y=-1004.471, z=-99.024}},
+	{"Police Station", {x=443.4068, y=-983.256, z=30.689589}},
+	{"Bank Vault", {x=263.39627, y=214.39891, z=101.68336}},
+	{"Blaine County Bank", {x=-109.77874, y=6464.8945, z=31.626724}}, -- credit to fluidware for telling me about this one
+	{"Tequi-La-La Bar", {x=-564.4645, y=275.5777, z=83.074585}},
+	{"Scrapyard Body Shop", {x=485.46396, y=-1315.0614, z=29.2141}},
+	{"The Lost MC Clubhouse", {x=980.8098, y=-101.96038, z=74.84504}},
+	{"Vangelico Jewlery Store", {x=-629.9367, y=-236.41296, z=38.057056}},
+	{"Airport Lounge", {x=-913.8656, y=-2527.106, z=36.331566}},
+	{"Morgue", {x=240.94368, y=-1379.0645, z=33.74177}},
+	{"Union Depository", {x=1.298771, y=-700.96967, z=16.131021}},
+	{"Fort Zancudo Tower", {x=-2357.9187, y=3249.689, z=101.45073}},
+	{"Agency Interior", {x=-1118.0181, y=-77.93254, z=-98.99977}},
+	{"Agency Garage", {x=-1071.0494, y=-71.898506, z=-94.59982}},
+	{"Terrobyte Interior", {x=-1421.015, y=-3012.587, z=-80.000}},
+	{"Bunker Interior", {x=899.5518,y=-3246.038, z=-98.04907}},
+	{"IAA Office", {x=128.20, y=-617.39, z=206.04}},
+	{"FIB Top Floor", {x=135.94359, y=-749.4102, z=258.152}},
+	{"FIB Floor 47", {x=134.5835, y=-766.486, z=234.152}},
+	{"FIB Floor 49", {x=134.635, y=-765.831, z=242.152}},
+	{"Big Fat White Cock", {x=-31.007448, y=6317.047, z=40.04039}},
+	{"Strip Club DJ Booth", {x=121.398254, y=-1281.0024, z=29.480522}},
+}
+
+local lscCoords = {
+	v3(-356.09048, -134.77142, 40.012955),
+	v3(723.11597, -1088.8312, 23.232006),
+	v3(-1145.8977, -1991.1444, 14.18357),
+	v3(1182.3055, 2645.2324, 38.63961),
+	v3(108.85017, 6617.877, 32.673054),
+}
+
+local missionEndTeleports = {
+	[4] = "Sandy Shores",
+	[7] = "Tequi-La-La",
+	[8] = "LSIA (Bottom Level)",
+	[9] = "Yellow Jack Bar",
+	[10] = "Spitroasters Meat House",
+	[11] = "Up-n-Atom Burger",
+	[13] = "Alamo Fruit Market",
+	[25] = "Lesters Warehouse",
+	[28] = "Bennys Shop",
+	[31] = "Sandy Shores Boat House",
+	[42] = "Hookies Food Diner",
+	[56] = "Paleto Bay",
+	[58] = "Grapeseed Airfield",
+	[59] = "Paleto Bay Ammunation",
+	[60] = "LSIA (Top Level)",
+	[66] = "Observatory",
+	[68] = "Casino",
+	[72] = "Casino Roof",
+	[87] = "Martin Madrazos House",
+	[90] = "LS Docks",
+	[91] = "Del Perro Pier",
+	[97] = "Country Club",
+	[114] = "Mount Chiliad"
+}
+
+local interiorTpList = {
+	[70] = "Bunker", -- 70 thru 80 are bunkers
+	[81] = "Mobile Operations Center",
+	[83] = "Hangar", -- 83 thru 87 are hangars
+	[88] = "Avenger",
+	[89] = "Facility", -- 89 thru 97 are facilities
+	[102] = "Nightclub Garage",-- 102 thru 111 are garages
+	[117] = "Terrorbyte",
+	[122] = "Arena Workshop",
+	[123] = "Casino",
+	[124] = "Penthouse",
+	[128] = "Arcade Garage", -- 128 thru 133 are garages
+	[146] = "Nightclub",
+	[147] = "Kosatka",
+	[149] = "Auto Shop", -- 149 thru 153 are auto shops
+	[155] = "Agency Office",
+	[159] = "Acid Lab",
+	[160] = "Freakshop",
+	[161] = "Eclipse Blvd Garage",
+	[164] = "Scrapyard",
+}
+
+local freemodeMissionWarps = {
+	[267] = "Junk Energy Skydive",
+	[292] = "Bike Service",
+	[296] = "Ammunation Contract",
+	[304] = "Acid Lab Setup",
+	[308] = "Stash House Mission",
+	[309] = "Taxi Mission",
+	[318] = "Time Trial",
+	[324] = "Tow Truck Service"
+}
+
+local colors = {
+	{-1, "Default"},
+	{1, "White"},
+	{28, "Pastel Red"},
+	{57, "Pastel Light Red"},
+	{27, "Red"},
+	{48, "Pastel Blue"},
+	{26, "Blue"},
+	{116, "Dark Blue"},
+	{211, "Cyan"},
+	{18, "Green"},
+	{21, "Violet"},
+	{49, "Purple"},
+	{24, "Magenta"},
+	{30, "Pink"},
+	{45, "Pastel Pink"},
+	{46, "Lime Green"},
+	{12, "Yellow"},
+	{109, "Gold"},
+	{31, "Pastel Orange"},
+	{15, "Orange"},
+}
+
+local warnings = {
+	joaat("NT_INV"),
+	joaat("NT_INV_FREE"),
+	joaat("NT_INV_PARTY_INVITE"),
+	joaat("NT_INV_PARTY_INVITE_MP"),
+	joaat("NT_INV_PARTY_INVITE_MP_SAVE"),
+	joaat("NT_INV_PARTY_INVITE_SAVE"),
+	joaat("NT_INV_MP_SAVE"),
+	joaat("NT_INV_SP_SAVE"),
+}
+
+local transactionWarnings = {
+	joaat("CTALERT_F"),
+	joaat("CTALERT_F_1"),
+	joaat("CTALERT_F_2"),
+	joaat("CTALERT_F_3"),
+	joaat("CTALERT_F_4"),
+}
+
+local scripts = {
+	"valentineRpReward2",
+	"main_persistent",
+	"cellphone_controller",
+	"shop_controller",
+	"stats_controller",
+	"timershud",
+	"am_npc_invites",
+	"fm_maintain_cloud_header_data"
+}
+
+local shopScripts = {
+	{"Clothes Store", "clothes_shop_mp"},
+	{"Barber Shop", "hairdo_shop_mp"},
+	{"Tattoo Shop", "tattoo_shop"},
+	{"Ammunation", "gunclub_shop"},
+	{"Convenience Store", "am_hold_up"},
+	{"Los Santos Customs", "Methadone_shop"}
+}
+
+local featureCreateStartTime = util.current_time_millis()
+local my_root = menu.my_root()
+local lobby = my_root:list("XP exploit")
+local vehicles = my_root:list("Vehicles")
+
+local menus = {}
+local hasLink = {}
+
+if not SCRIPT_SILENT_START then
+	toast($"Hello, {players.get_name(players.user())}!\nWelcome To The car mod!")
+end
+
+
+util.create_tick_handler(function()
+    local local_player = players.user_ped()
+    if not menu.get_value(menu.ref_by_path("Self>Immortality")) and not isPlayerInInterior(players.user()) then
+        SET_ENTITY_PROOFS(local_player, proofs.bullet.on, proofs.fire.on, proofs.explosion.on, proofs.collision.on, proofs.melee.on, proofs.steam.on, false, proofs.steam.on)
+    end
+	yield(500)
+end)
+
+
+
+
+local rp_loop = lobby:list("RP Exploit", {}, " Level's everyone up constantly.")
+local level = 120
+rp_loop:slider("Stop At Level...", {"maxlevellobby"}, "", 1, 8000, 120, 1, function(val)
+	level = val
+end)
+
+local delay = 5
+rpLoopAll = rp_loop:slider("Loop Delay", {"loopdelaylobby"}, 'Note: setting the delay to "Fastest" will cause a fatal error in bigger lobbies and may lead to some issues.', 0, 2500, 5, 5, function(val)
+	delay = val
+end)
+menu.add_value_replacement(rpLoopAll, 0, "Fastest (Read Description)")
+menu.add_value_replacement(rpLoopAll, 5, "Default")
+
+function triggerCollectibleLoop(playerID, i)
+	if players.get_rank(playerID) >= level then return end
+	util.trigger_script_event(1 << playerID, {968269233, players.user(), 4, i, 1, 1, 1})
+	util.trigger_script_event(1 << playerID, {968269233, players.user(), 8, -1, 1, 1, 1})
+end
+
+local lobbyRPLoop
+lobbyRPLoop = rp_loop:toggle_loop("Enable Loop", {"rplooplobby"}, "Enables RP Loop on everyone in the lobby.", function()
+	if not isNetPlayerOk(players.user(), true, true) then
+		lobbyRPLoop.value = false
+		return
+	end
+	for players.list_except(true) as playerID do
+		if not menu.player_root(playerID):isValid() then return end
+		local giveRP = menu.ref_by_rel_path(menu.player_root(playerID), "Friendly>Give RP")
+		if players.is_marked_as_modder(playerID) or players.get_weapon_damage_modifier(playerID) == 1 or not isNetPlayerOk(playerID) or players.get_rank(playerID) >= level then continue end
+		if delay == 0 then
+			for i = 21, 24 do
+				triggerCollectibleLoop(playerID, i)
+				giveRP:trigger()
+			end
+		elseif delay == 5 then
+			triggerCollectibleLoop(playerID, math.random(21, 24)) -- limiting the amount of script events sent to prevent a fatal error
+		else
+			for i = 21, 24 do
+				triggerCollectibleLoop(playerID, i)
+			end
+			yield(delay)
+		end
+	end	
+end)
+
+
+local nitrous = vehicles:list("Nitrous", {}, "Note: Other players can also see this, but, their game will have to load the ptfx asset on their side. The game usually does this rather quickly but sometimes it just doesn't load for others.")
+local durationMod = 1.0
+nitrous:slider_float("Duration", {"duration"}, "The amount of seconds that the nitrous will last.", 100, 1000, 300, 50, function(value)
+	durationMod = value/300 -- this seems to be the exact conversion for converting the float to seconds
+	--toast(value/300)
+end)
+
+local powerMod = 1.5
+nitrous:slider_float("Power Multiplier", {"multiplier"}, "", 100, 1000, 150, 50, function(value)
+	powerMod = value/100
+end)
+
+local rechargeMod = 2.0
+nitrous:slider_float("Recharge Time", {"rechargetime"}, "Note: The recharge speed may change based on the duration.", 100, 1000, 200, 50, function(value)
+	rechargeMod = value/100
+end)
+
+nitrous:toggle("Use Horn Button For Nitrous", {}, "", function(toggled)
+	_SET_VEHICLE_USE_HORN_BUTTON_FOR_NITROUS(toggled)
+end)
+
+nitrous:toggle_loop("Disable On Key Release", {}, "Disables nitrous when you let go of the W key.", function(toggled)
+	local vehicle = entities.get_user_vehicle_as_handle()
+	if IS_CONTROL_JUST_RELEASED(0, 71) and IS_NITROUS_ACTIVE(vehicle) then
+		SET_OVERRIDE_NITROUS_LEVEL(vehicle, false, durationMod, powerMod, rechargeMod, false) -- SET_NITROUS_IS_ACTIVE didnt wanna work here cus gay
+	end
+	yield()
+end)
+
+nitrous:toggle_loop("Disable In Air", {}, "", function(toggled)
+	local vehicle = entities.get_user_vehicle_as_handle()
+	if IS_ENTITY_IN_AIR(vehicle) then
+		SET_OVERRIDE_NITROUS_LEVEL(vehicle, false, durationMod, powerMod, rechargeMod, false) -- SET_NITROUS_IS_ACTIVE didnt wanna work here cus gay
+	end
+	yield()
+end)
+
+
+local nitrousPtfxActive = false
+nitrous:action("Load PTFX For Nearby Players", {"loadnitrousptfx"}, "Loads the nitrous PTFX for nearby players so that they can also see the flames.", function() 
+	local vehicle = entities.get_user_vehicle_as_handle()
+	loadPtfxAsset("veh_xs_vehicle_mods")
+	USE_PARTICLE_FX_ASSET("veh_xs_vehicle_mods")
+	if nitrousPtfxActive then
+		toast("This is already active, please wait...")
+		return
+	end
+	ptfx = START_NETWORKED_PARTICLE_FX_LOOPED_ON_ENTITY("veh_nitrous", vehicle, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5, false, false, false, 0, 0, 0, 255)
+	nitrousPtfxActive = true
+	toast("Loading PTFX...")
+	yield(5000)
+	REMOVE_PARTICLE_FX(ptfx)
+	toast("PTFX should now be loaded for nearby players. :D")
+	nitrousPtfxActive = false
+end)
+
+
+local clearedNitrous = false
+local nitrousTgl
+nitrousTgl = nitrous:toggle_loop("Enable Nitrous", {"nitrous"}, "Default Nitrous button is X.", function()
+	if GET_HAS_ROCKET_BOOST(entities.get_user_vehicle_as_handle()) then return end
+	if not clearedNitrous then
+		CLEAR_NITROUS(entities.get_user_vehicle_as_handle()) -- clearing nitrous on feature startup because the bar doesn't go down if enabled while full.
+		clearedNitrous = true
+		return
+	else
+		loadPtfxAsset("veh_xs_vehicle_mods")
+		local vehicle = entities.get_user_vehicle_as_handle()
+		SET_OVERRIDE_NITROUS_LEVEL(vehicle, true, durationMod, powerMod, rechargeMod, false)
+		if not IS_NITROUS_ACTIVE(vehicle) then
+			SET_NITROUS_IS_ACTIVE(vehicle, false) -- disable the nitrous ptfx when not active, removing the ptfx still left the lights from the ptfx behind
+			return
+		end
+	end
+	yield()
+end, function()
+	SET_OVERRIDE_NITROUS_LEVEL(entities.get_user_vehicle_as_handle(), false, 0.0, 0.0, 0.0, false)
+	clearedNitrous = false
+end)
+
+local flamethrowerTune = vehicles:list("Flamethrower Tune", {}, "")
+local redline
+redline = flamethrowerTune:toggle_loop("On Redline", {}, "", function()
+	if not nitrousTgl.value then 
+		toast("Please enable nitrous to use this feature. :/")
+		redline.value = false
+		return
+	end
+	loadPtfxAsset("veh_xs_vehicle_mods")
+	local vehPtr = entities.get_user_vehicle_as_pointer()
+	local vehHandle = entities.get_user_vehicle_as_handle()
+	if vehPtr == 0 then return end
+	SET_NITROUS_IS_ACTIVE(vehHandle, entities.get_rpm(vehPtr) == 1.0 and entities.get_current_gear(vehPtr) == 1)
+	yield()
+end)
+
+local downshift
+downshift = flamethrowerTune:toggle_loop("On Downshift", {}, "", function()
+	if not nitrousTgl.value then 
+		toast("Please enable nitrous to use this feature. :/")
+		downshift.value = false
+		return
+	end
+	loadPtfxAsset("veh_xs_vehicle_mods")
+	local vehPtr = entities.get_user_vehicle_as_pointer()
+	local vehHandle = entities.get_user_vehicle_as_handle()
+	if vehPtr == 0 then return end
+	local prevGear = entities.get_current_gear(vehPtr)
+	yield()
+	yield()
+	local curGear = entities.get_current_gear(vehPtr)
+	if curGear < prevGear then
+		for i = 1, 25 do
+			SET_NITROUS_IS_ACTIVE(vehHandle, true)
+			yield()
+		end
+	end
+	yield()
+end)
+
+local upshift
+upshift = flamethrowerTune:toggle_loop("On Upshift", {}, "", function()
+	if not nitrousTgl.value then 
+		toast("Please enable nitrous to use this feature. :/")
+		upshift.value = false
+		return
+	end
+	loadPtfxAsset("veh_xs_vehicle_mods")
+	local vehPtr = entities.get_user_vehicle_as_pointer()
+	local vehHandle = entities.get_user_vehicle_as_handle()
+	if vehPtr == 0 then return end
+	local prevGear = entities.get_current_gear(vehPtr)
+	yield()
+	yield()
+	local curGear = entities.get_current_gear(vehPtr)
+	if curGear > prevGear then
+		for i = 1, 25 do
+			SET_NITROUS_IS_ACTIVE(vehHandle, true)
+			yield()
+		end
+	end
+	yield()
+end)
+
+local accelerating
+accelrating = flamethrowerTune:toggle_loop("While Accelerating", {}, "", function()
+	if not nitrousTgl.value then 
+		toast("Please enable nitrous to use this feature. :/")
+		accelrating.value = false
+		return
+	end
+	loadPtfxAsset("veh_xs_vehicle_mods")
+	local vehicle = entities.get_user_vehicle_as_handle()
+	SET_NITROUS_IS_ACTIVE(vehicle, IS_CONTROL_PRESSED(0, 71))
+	yield()
+end)
+
+local alwaysOn
+alwaysOn = flamethrowerTune:toggle_loop("Always On", {}, "", function()
+	if not nitrousTgl.value then 
+		toast("Please enable nitrous to use this feature. :/")
+		alwaysOn.value = false
+		return
+	end
+	loadPtfxAsset("veh_xs_vehicle_mods")
+	local vehicle = entities.get_user_vehicle_as_handle()
+	SET_NITROUS_IS_ACTIVE(vehicle, true)
+end)
+
+flamethrowerTune:action("Load PTFX For Nearby Players", {}, "Loads the nitrous PTFX for nearby players so that they can also see the flames.", function() 
+	menu.trigger_commands("loadnitrous")
+end)
+
+local antilag = vehicles:list("Anti-Lag", {}, "")
+local antilagDelay = 100
+antilag:slider("Delay", {"antilagdelay"}, "The interval in which the exhaust will pop.", 0, 1000, 100, 10, function(amount)
+	antilagDelay = amount
+end)
+
+local random = false
+antilag:toggle("Randomize", {}, "Randomizes the interval in which the exhaust will pop. (Note: randomize will use the delay as the max delay.)", function(toggled)
+	random = toggled
+end)
+
+antilag:toggle_loop("Anti-Lag", {"antilag"}, "Rev your engine to use. Only works when vehicle is still. Doesn't network with other players.", function()
+	local veh = entities.get_user_vehicle_as_pointer()
+	if veh == 0 then return end
+	local gear = entities.get_current_gear(veh)
+	local rpm = entities.get_rpm(veh)
+	if IS_CONTROL_PRESSED(0, 22) and IS_CONTROL_PRESSED(0, 71) then
+		entities.set_rpm(veh, 0.9)
+		yield(random ? math.random(100, antilagDelay) : antilagDelay)
+		entities.set_rpm(veh, 0.1)
+	end
+	yield()
+end)
+
+local wheelie = vehicles:list("Wheelie")
+local wheelie_val = 0.3
+wheelie:slider_float("Wheelie Power", {"wheeliepower"}, "", 10, 100, 30, 5, function(value)
+	wheelie_val = value / 100
+end)
+
+wheelie:toggle_loop("Enable", {}, "Press Ctrl and W to wheelie.", function()
+	local CAutomobile = entities.get_user_vehicle_as_pointer()
+	if CAutomobile == 0 then return end
+	local vehicleModel = GET_ENTITY_MODEL(entities.get_user_vehicle_as_handle())
+	if not IS_THIS_MODEL_A_CAR(vehicleModel) and not IS_THIS_MODEL_AN_AMPHIBIOUS_CAR(vehicleModel) then 
+		return 
+	end
+	local CHandlingData = entities.vehicle_get_handling(CAutomobile)
+	memory.write_float(CHandlingData + 0x00EC, IS_CONTROL_PRESSED(0, 71) and IS_CONTROL_PRESSED(0, 280) ? -wheelie_val : 0.5)
+	yield()
+end)
+
+local clumsiness = vehicles:list("Clumsiness", {}, "Makes your vehicle easy to roll.")
+local clumsy_val = 0.3
+clumsiness:slider_float("Clumsiness", {"clumsinessvalue"}, "", 10, 100, 30, 5, function(value)
+	clumsy_val = value / 100
+end)
+
+clumsiness:toggle_loop("Enable", {"vehicleclumsiness"}, "", function()
+	local CAutomobile = entities.get_user_vehicle_as_pointer()
+	if CAutomobile == 0 then return end
+	local vehicleModel = GET_ENTITY_MODEL(entities.get_user_vehicle_as_handle())
+	if not IS_THIS_MODEL_A_CAR(vehicleModel) and not IS_THIS_MODEL_AN_AMPHIBIOUS_CAR(vehicleModel) then 
+		return 
+	end
+	local CHandlingData = entities.vehicle_get_handling(CAutomobile)
+	memory.write_float(CHandlingData + 0x00EC, IS_CONTROL_PRESSED(0, 266) or IS_CONTROL_PRESSED(0, 267) ? -clumsy_val : 0.5)
+	yield()
+end, function()
+	local CAutomobile = entities.get_user_vehicle_as_pointer()
+	if CAutomobile == 0 then return end
+	local CHandlingData = entities.vehicle_get_handling(CAutomobile)
+	memory.write_float(CHandlingData + 0x00EC, 0.5)
+end)
+
+
+local engineSound = vehicles:list("Change Engine Sound", {}, "Note: Some engine sounds may affect your vehicle acceleration. Vehicle upgrades such as engine or exhause also effect the sound.")
+local vehicleClass = {}
+local ignore_duplicates = {} 
+for util.get_vehicles() as vehicle do
+	local name = util.get_label_text(vehicle.name)
+	local hash = joaat(vehicle.name)
+	local vehClassName = GET_VEHICLE_CLASS_FROM_NAME(hash)
+
+	if ignore_class or name == "NULL" or ignore_duplicates[name] or (not IS_THIS_MODEL_A_CAR(hash) and not IS_THIS_MODEL_A_BIKE(hash) and not IS_THIS_MODEL_A_QUADBIKE(hash)) then 
+		continue 
+	end
+	if not vehicleClass[vehClassName] then
+		vehicleClass[vehClassName] = engineSound:list(util.get_label_text($"VEH_CLASS_{vehClassName}"))
+	end
+	ignore_duplicates[name] = true
+	engineSound.action(vehicleClass[vehClassName], name, {$"engine {name}"}, "", function()
+		PRELOAD_VEHICLE_AUDIO_BANK(hash)
+		SET_RADIO_TO_STATION_NAME("OFF") -- the radio kept changing for some reason so this should fix that
+		FORCE_USE_AUDIO_GAME_OBJECT(entities.get_user_vehicle_as_handle(), vehicle.name)
+		yield(100)
+		SET_RADIO_TO_STATION_NAME("OFF") -- sometimes it doesn't turn off
+	end)
+end
+
+vehicles:toggle_loop("Disable Radio On Vehicle Entry", {}, "", function()
+	local vehicle = GET_VEHICLE_PED_IS_USING(players.user_ped())
+	if GET_PLAYER_RADIO_STATION_NAME() != "OFF" and GET_IS_VEHICLE_ENGINE_RUNNING(vehicle) then
+		yield(150)
+		SET_RADIO_TO_STATION_NAME("OFF")
+		repeat
+			local curVehicle = GET_VEHICLE_PED_IS_USING(players.user_ped())
+			yield()
+		until not IS_PED_IN_ANY_VEHICLE(players.user_ped()) or curVehicle != vehicle
+	end
+	yield(100)
+end)
+
+vehicles:toggle_loop("Vehicle Rockets", {"vehiclerockets"}, "Press Left Mouse to fire", function()
+	local wpn = joaat("vehicle_weapon_tank")
+	local vehicle = entities.get_user_vehicle_as_handle()
+	local offset = GET_OFFSET_FROM_ENTITY_IN_WORLD_COORDS
+	local leftStart = offset(vehicle, -1.25, 0.5, 0.35)
+	local leftEnd = offset(vehicle, -1.25, 100.0, 0.35)
+	local rightStart = offset(vehicle, 1.25, 0.5, 0.35)
+	local rightEnd = offset(vehicle, 1.25, 100.0, 0.35)
+	if IS_PED_IN_ANY_VEHICLE(players.user_ped()) and not GET_IS_TASK_ACTIVE(players.user_ped(), 199) and IS_CONTROL_JUST_RELEASED(0, 69) and not IS_CONTROL_PRESSED(0, 68) then
+		SHOOT_SINGLE_BULLET_BETWEEN_COORDS(leftStart, leftEnd, 0, true, wpn, players.user_ped(), true, false, 5.0)
+		SHOOT_SINGLE_BULLET_BETWEEN_COORDS(rightStart, rightEnd, 0, true, wpn, players.user_ped(), true, false, 5.0)
+	end
+	yield()
+end)
+
+vehicles:toggle_loop("Stun Lock", {}, "Mimics the ruiner 2000 stun lock for players trying to enter the vehicle when access is set to no-one.", function()
+	if entities.get_user_vehicle_as_handle() == 0 then return end
+	for players.list_except(true) as playerID do
+		local ped = GET_PLAYER_PED_SCRIPT_INDEX(playerID)
+		local pPed =  entities.handle_to_pointer(ped)
+		local pedPtr = entities.handle_to_pointer(players.user_ped())
+		local vehicle = entities.get_user_vehicle_as_handle()
+		local PersonalVehicle = DECOR_GET_INT(vehicle, "Player_Vehicle") != 0
+		local boneCoords = GET_PED_BONE_COORDS(ped, 0xFCD9, v3())
+		if GET_VEHICLE_DOORS_LOCKED_FOR_PLAYER(vehicle, playerID) and GET_VEHICLE_PED_IS_TRYING_TO_ENTER(ped) == vehicle and PersonalVehicle and IS_THIS_MODEL_A_CAR(GET_ENTITY_MODEL(vehicle)) then
+			if HAS_ANIM_EVENT_FIRED(ped, -1526509349) then
+				util.call_foreign_function(CWeaponDamageEventTrigger, pedPtr, pPed, boneCoords, 0, 1, joaat("weapon_stungun_mp"), 1.0, 0, 0, DF_IsAccurate | DF_IgnoreRemoteDistCheck, 0, 0, 0, 0, 0, 0, 0, 0.0)
+				yield(1000)
+			end
+		end
+	end
+	yield()
+end)
+
+local veh_jump = vehicles:list("Vehicle Jump")
+local jumpForce = 25.00
+veh_jump:slider_float("Power", {"jumpiness"}, "", 0, 10000, 2500, 100, function(value)
+	jumpForce = value / 100
+end)
+
+veh_jump:toggle_loop("Enable", {"vehiclejump"}, "Press spacebar to jump.", function()
+	local vehicle = entities.get_user_vehicle_as_handle()
+	if vehicle != 0 and DOES_ENTITY_EXIST(vehicle) and IS_CONTROL_JUST_RELEASED(0, 102) then
+		APPLY_FORCE_TO_ENTITY(vehicle, 1, 0.0, jumpForce/1.5, jumpForce, 0.0, 0.0, 0.0, 0, true, true, true, false, true)
+		repeat
+			yield()
+		until not IS_ENTITY_IN_AIR(vehicle)
+	end
+	yield()
+end)
+
+vehicles:toggle("Toggle Interior Light", {}, "", function(toggled)
+	SET_VEHICLE_FORCE_INTERIORLIGHT(entities.get_user_vehicle_as_handle(), toggled)
+end)
+
+local deformation = 1.00
+vehicles:slider_float("Deformation", {"deformation"}, "", -1000000, 1000000, 100, 100, function(value)
+	deformation = value / 100
+	menu.trigger_commands($"vhdeformationmult {deformation}")
+end)
+
+vehicles:toggle_loop("Auto Unlock Doors", {}, "", function()
+	local vehicle = GET_VEHICLE_PED_IS_TRYING_TO_ENTER(players.user_ped())
+	SET_VEHICLE_DOORS_LOCKED(vehicle,  1)
+	yield(100)
+end)
+
+vehicles:toggle_loop("Skip Hotwire", {}, "", function()
+	local vehicle = GET_VEHICLE_PED_IS_TRYING_TO_ENTER(players.user_ped())
+	SET_VEHICLE_NEEDS_TO_BE_HOTWIRED(vehicle, false)
+	yield(100)
+end)
+
+vehicles:toggle_loop("Fast Enter/Exit", {"fastvehicleenter"}, "Enter vehicles faster.", function()
+	if (GET_IS_TASK_ACTIVE(players.user_ped(), 160) or GET_IS_TASK_ACTIVE(players.user_ped(), 167) or GET_IS_TASK_ACTIVE(players.user_ped(), 165)) and not GET_IS_TASK_ACTIVE(players.user_ped(), 195) then
+		FORCE_PED_AI_AND_ANIMATION_UPDATE(players.user_ped())
+	end
+end)
